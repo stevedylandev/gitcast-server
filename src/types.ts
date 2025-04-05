@@ -104,6 +104,7 @@ export interface SimplifiedEvent {
   fid: number;
   action: string;
   commitMessage: string | null;
+  commitUrl: string | null;
   // Add Farcaster info
   farcaster?: {
     username: string;

@@ -113,7 +113,8 @@ function simplifyEvent(event: GithubEvent, user: WarpcastVerification): Simplifi
     },
     fid: user.fid,
     action: getEventAction(event),
-    commitMessage: getCommitMessage(event)
+    commitMessage: getCommitMessage(event),
+    commitUrl: getCommitUrl(event)
   };
 
   // Only add Farcaster info if we have a username
@@ -155,6 +156,13 @@ function getEventAction(event: GithubEvent): string {
 function getCommitMessage(event: GithubEvent): string | null {
   if (event.type === 'PushEvent' && event.payload?.commits?.length > 0) {
     return event.payload.commits[0].message;
+  }
+  return null;
+}
+
+function getCommitUrl(event: GithubEvent): string | null {
+  if (event.type === 'PushEvent' && event.payload?.commits?.length > 0) {
+    return event.payload.commits[0].url;
   }
   return null;
 }
