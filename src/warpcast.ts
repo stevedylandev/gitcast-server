@@ -33,61 +33,109 @@ export class WarpcastApiClient {
     }
   }
 
-  async getFarcasterUser(fid: number, c: Context): Promise<FarcasterUserCache | null> {
+  async getFarcasterUsersInBulk(fids: number[], c: Context): Promise<Map<number, FarcasterUserCache>> {
+    if (!this.neynarApiKey) {
+      console.error("Neynar API key not set");
+      return new Map();
+    }
+
+    if (fids.length === 0) {
+      return new Map();
+    }
+
     const kv = c.env.GITHUB_USERS;
-    const cacheKey = `farcaster_user_${fid}`;
+    const userMap = new Map<number, FarcasterUserCache>();
+    const fidsToFetch: number[] = [];
 
     // Check cache first
     if (kv) {
-      try {
-        const cached = await kv.get(cacheKey, 'json') as FarcasterUserCache | null;
-        if (cached && (Date.now() - cached.timestamp < 24 * 60 * 60 * 1000)) { // 24 hour cache
-          return cached;
+      const cachePromises = fids.map(async (fid) => {
+        const cacheKey = `farcaster_user_${fid}`;
+        try {
+          const cached = await kv.get(cacheKey, 'json') as FarcasterUserCache | null;
+          if (cached && (Date.now() - cached.timestamp < 24 * 60 * 60 * 1000)) { // 24 hour cache
+            return { fid, user: cached };
+          }
+        } catch (error) {
+          console.error(`Error fetching cached Farcaster user for FID ${fid}:`, error);
         }
-      } catch (error) {
-        console.error(`Error fetching cached Farcaster user for FID ${fid}:`, error);
-      }
-    }
-
-    // If no cached data, fetch it
-    if (!this.neynarApiKey) {
-      console.error("Neynar API key not set");
-      return null;
-    }
-
-    try {
-      const url = `https://api.neynar.com/v2/farcaster/user?fid=${fid}`;
-      const response = await fetch(url, {
-        headers: {
-          'accept': 'application/json',
-          'x-api-key': this.neynarApiKey
-        }
+        return { fid, user: null };
       });
 
-      const data = await response.json();
+      const cacheResults = await Promise.all(cachePromises);
 
-      if (!data.user) {
-        return null;
-      }
-
-      const user: FarcasterUserCache = {
-        fid: data.user.fid,
-        username: data.user.username,
-        display_name: data.user.display_name,
-        pfp_url: data.user.pfp_url,
-        timestamp: Date.now()
-      };
-
-      // Cache the user data
-      if (kv) {
-        await kv.put(cacheKey, JSON.stringify(user), { expirationTtl: 86400 });
-      }
-
-      return user;
-    } catch (error) {
-      console.error(`Error fetching Farcaster user for FID ${fid}:`, error);
-      return null;
+      cacheResults.forEach(result => {
+        if (result.user) {
+          userMap.set(result.fid, result.user);
+        } else {
+          fidsToFetch.push(result.fid);
+        }
+      });
+    } else {
+      fidsToFetch.push(...fids);
     }
+
+    // If all users were in cache, return them
+    if (fidsToFetch.length === 0) {
+      return userMap;
+    }
+
+    // Fetch users in chunks of 100 (API limit)
+    const chunkSize = 100;
+    for (let i = 0; i < fidsToFetch.length; i += chunkSize) {
+      const fidChunk = fidsToFetch.slice(i, i + chunkSize);
+
+      try {
+        console.log(`Fetching ${fidChunk.length} Farcaster users from Neynar API`);
+        const url = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${fidChunk.join(',')}`;
+        const response = await fetch(url, {
+          headers: {
+            'accept': 'application/json',
+            'x-api-key': this.neynarApiKey
+          }
+        });
+
+        if (!response.ok) {
+          console.error(`Neynar API error: ${response.status} ${response.statusText}`);
+          continue;
+        }
+
+        const data = await response.json();
+
+        if (!data.users || !Array.isArray(data.users)) {
+          console.error('Invalid response from Neynar API:', data);
+          continue;
+        }
+
+        // Process and cache users
+        const cachePromises = data.users.map(async (userData: any) => {
+          if (!userData || !userData.fid) return;
+
+          const user: FarcasterUserCache = {
+            fid: userData.fid,
+            username: userData.username || '',
+            display_name: userData.display_name || '',
+            pfp_url: userData.pfp_url || '',
+            timestamp: Date.now()
+          };
+
+          userMap.set(user.fid, user);
+
+          // Cache user data
+          if (kv) {
+            const cacheKey = `farcaster_user_${user.fid}`;
+            await kv.put(cacheKey, JSON.stringify(user), { expirationTtl: 86400 });
+          }
+        });
+
+        await Promise.all(cachePromises);
+
+      } catch (error) {
+        console.error(`Error fetching Farcaster users in bulk:`, error);
+      }
+    }
+
+    return userMap;
   }
 
   async getGithubVerifications(cursor?: string): Promise<{
@@ -193,23 +241,34 @@ export class WarpcastApiClient {
     c: Context,
     verifications: WarpcastVerification[]
   ): Promise<WarpcastVerification[]> {
-    const enhanced: WarpcastVerification[] = [];
+    if (verifications.length === 0) {
+      return [];
+    }
 
-    for (const verification of verifications) {
-      const farcasterUser = await this.getFarcasterUser(verification.fid, c);
+    console.log(`Enhancing ${verifications.length} GitHub verifications with Farcaster info`);
+
+    // Extract unique FIDs
+    const fids = [...new Set(verifications.map(v => v.fid))];
+
+    // Get all user data in bulk
+    const userMap = await this.getFarcasterUsersInBulk(fids, c);
+
+    // Enhance verifications with Farcaster user data
+    return verifications.map(verification => {
+      const farcasterUser = userMap.get(verification.fid);
 
       if (farcasterUser) {
-        enhanced.push({
+        console.log(`Found Farcaster user for FID ${verification.fid}: ${farcasterUser.username}`);
+        return {
           ...verification,
           farcasterUsername: farcasterUser.username,
           farcasterDisplayName: farcasterUser.display_name,
           farcasterPfpUrl: farcasterUser.pfp_url
-        });
+        };
       } else {
-        enhanced.push(verification);
+        console.warn(`No Farcaster user data found for FID ${verification.fid}`);
+        return verification;
       }
-    }
-
-    return enhanced;
+    });
   }
 }

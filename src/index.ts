@@ -113,14 +113,17 @@ function simplifyEvent(event: GithubEvent, user: WarpcastVerification): Simplifi
     },
     fid: user.fid,
     action: getEventAction(event),
-    commitMessage: getCommitMessage(event),
-    // Add Farcaster user info if available
-    farcaster: user.farcasterUsername ? {
-      username: user.farcasterUsername,
-      display_name: user.farcasterDisplayName,
-      pfp_url: user.farcasterPfpUrl || ''
-    } : undefined
+    commitMessage: getCommitMessage(event)
   };
+
+  // Only add Farcaster info if we have a username
+  if (user.farcasterUsername) {
+    simpleEvent.farcaster = {
+      username: user.farcasterUsername,
+      display_name: user.farcasterDisplayName || user.farcasterUsername,
+      pfp_url: user.farcasterPfpUrl || ''
+    };
+  }
 
   return simpleEvent;
 }
