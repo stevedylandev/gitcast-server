@@ -40,8 +40,6 @@ export class GitHubApiClient {
 
       return events.map(event => ({
         ...event,
-        created_at: new Date(event.created_at) as unknown as string,
-        username
         username,
         created_at: new Date(event.created_at).toISOString()
       }));
