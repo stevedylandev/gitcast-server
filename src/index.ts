@@ -162,7 +162,7 @@ function getCommitMessage(event: GithubEvent): string | null {
 
 function getCommitUrl(event: GithubEvent): string | null {
   if (event.type === 'PushEvent' && event.payload?.commits?.length > 0) {
-    return event.payload.commits[0].url;
+    return `https://github.com/${event.repo.name}/commit/${event.payload.commits[0].sha}`
   }
   return null;
 }
