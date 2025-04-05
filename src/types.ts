@@ -47,10 +47,10 @@ export type WarpcastVerification = {
   platformId: string;
   platformUsername: string;
   verifiedAt: number;
-  // Add Farcaster info
   farcasterUsername?: string;
   farcasterDisplayName?: string;
   farcasterPfpUrl?: string;
+  timestamp?: number;
 };
 
 // Neynar API response types

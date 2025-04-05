@@ -42,6 +42,8 @@ export class GitHubApiClient {
         ...event,
         created_at: new Date(event.created_at) as unknown as string,
         username
+        username,
+        created_at: new Date(event.created_at).toISOString()
       }));
     } catch (error) {
       const githubError = error as GithubApiError;

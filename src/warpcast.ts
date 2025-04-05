@@ -86,7 +86,6 @@ export class WarpcastApiClient {
       const fidChunk = fidsToFetch.slice(i, i + chunkSize);
 
       try {
-        console.log(`Fetching ${fidChunk.length} Farcaster users from Neynar API`);
         const url = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${fidChunk.join(',')}`;
         const response = await fetch(url, {
           headers: {
@@ -184,13 +183,21 @@ export class WarpcastApiClient {
     const cachedUsers: WarpcastVerification[] = [];
     const fidsToCheck: number[] = [];
 
+    // Define cache freshness (1 hour in milliseconds)
+    const CACHE_FRESHNESS = 60 * 60 * 1000;
+
     // Check cache in parallel
     if (kv) {
       const cachePromises = fids.map(async (fid) => {
         try {
           const cacheKey = `github_user_${fid}`;
-          const cached = await kv.get(cacheKey, 'json') as WarpcastVerification | null;
-          return { fid, cached };
+          const cached = await kv.get(cacheKey, 'json') as (WarpcastVerification & { timestamp?: number }) | null;
+
+          // Check if cache exists and is fresh (less than 1 hour old)
+          const isFresh = cached && cached.timestamp &&
+            (Date.now() - cached.timestamp < CACHE_FRESHNESS);
+
+          return { fid, cached: isFresh ? cached : null };
         } catch (error) {
           console.error(`Cache error for FID ${fid}:`, error);
           return { fid, cached: null };
@@ -210,27 +217,33 @@ export class WarpcastApiClient {
       fidsToCheck.push(...fids);
     }
 
-    // If we have all users in cache, return them
+    // If we have all users in cache and they're all fresh, return them
     if (fidsToCheck.length === 0) {
       // Enhance with Farcaster user info if not already cached
       return await this.enhanceVerificationsWithFarcasterInfo(c, cachedUsers);
     }
 
-    // Fetch verifications for missing users
+    // Fetch verifications for missing or stale users
     const verifications = await this.getAllGithubVerifications();
     const matchingVerifications = verifications.filter(v => fidsToCheck.includes(v.fid));
 
+    // Add timestamp to each verification before caching
+    const timestampedVerifications = matchingVerifications.map(verification => ({
+      ...verification,
+      timestamp: Date.now()
+    }));
+
     // Cache results in parallel
     if (kv) {
-      const cachePromises = matchingVerifications.map(verification => {
+      const cachePromises = timestampedVerifications.map(verification => {
         const cacheKey = `github_user_${verification.fid}`;
-        return kv.put(cacheKey, JSON.stringify(verification), { expirationTtl: 86400 }); // 24 hour TTL
+        return kv.put(cacheKey, JSON.stringify(verification), { expirationTtl: 86400 }); // 24 hour TTL as backup
       });
 
       await Promise.all(cachePromises);
     }
 
-    const allVerifications = [...cachedUsers, ...matchingVerifications];
+    const allVerifications = [...cachedUsers, ...timestampedVerifications];
 
     // Enhance with Farcaster user info
     return await this.enhanceVerificationsWithFarcasterInfo(c, allVerifications);
@@ -245,7 +258,6 @@ export class WarpcastApiClient {
       return [];
     }
 
-    console.log(`Enhancing ${verifications.length} GitHub verifications with Farcaster info`);
 
     // Extract unique FIDs
     const fids = [...new Set(verifications.map(v => v.fid))];
@@ -258,7 +270,6 @@ export class WarpcastApiClient {
       const farcasterUser = userMap.get(verification.fid);
 
       if (farcasterUser) {
-        console.log(`Found Farcaster user for FID ${verification.fid}: ${farcasterUser.username}`);
         return {
           ...verification,
           farcasterUsername: farcasterUser.username,
