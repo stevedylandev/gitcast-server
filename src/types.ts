@@ -105,7 +105,7 @@ export interface SimplifiedEvent {
   action: string;
   commitMessage: string | null;
   commitUrl: string | null;
-  // Add Farcaster info
+  eventUrl: string;
   farcaster?: {
     username: string;
     display_name?: string;
