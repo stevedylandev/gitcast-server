@@ -1,16 +1,14 @@
 {
   "name": "gitcast-server",
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy --minify"
+    "build": "bun run build:shared",
+    "build:shared": "bun run --cwd packages/shared build",
+    "dev": "bun run dev:worker",
+    "dev:worker": "bun run --cwd packages/github-worker dev"
   },
-  "dependencies": {
-    "hono": "^4.7.5",
-    "octokit": "^4.1.2",
-    "zod-validation-error": "^3.4.0"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250214.0",
-    "wrangler": "^4.4.0"
-  }
+  "type": "module"
 }

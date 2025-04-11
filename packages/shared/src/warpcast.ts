@@ -1,13 +1,12 @@
-import { WarpcastVerification, NeynarFollowingResponse, FarcasterUserCache, NeynarUser } from "./types";
-import { Context } from "hono";
+import type { WarpcastVerification, NeynarFollowingResponse, FarcasterUserCache, NeynarUser } from "./types";
 
 export class WarpcastApiClient {
   private baseUrl: string;
   private neynarApiKey: string | undefined;
 
-  constructor(c: Context) {
+  constructor(neynarApiKey: string) {
     this.baseUrl = "https://api.warpcast.com";
-    this.neynarApiKey = c.env.NEYNAR_API_KEY;
+    this.neynarApiKey = neynarApiKey
   }
 
   async getFollowing(fid: number, viewerFid: number = fid): Promise<NeynarFollowingResponse> {
@@ -33,7 +32,7 @@ export class WarpcastApiClient {
     }
   }
 
-  async getFarcasterUsersInBulk(fids: number[], c: Context): Promise<Map<number, FarcasterUserCache>> {
+  async getUserData(fids: number[]): Promise<Map<number, FarcasterUserCache>> {
     if (!this.neynarApiKey) {
       console.error("Neynar API key not set");
       return new Map();
@@ -43,47 +42,12 @@ export class WarpcastApiClient {
       return new Map();
     }
 
-    const kv = c.env.GITHUB_USERS;
     const userMap = new Map<number, FarcasterUserCache>();
-    const fidsToFetch: number[] = [];
-
-    // Check cache first
-    if (kv) {
-      const cachePromises = fids.map(async (fid) => {
-        const cacheKey = `farcaster_user_${fid}`;
-        try {
-          const cached = await kv.get(cacheKey, 'json') as FarcasterUserCache | null;
-          if (cached && (Date.now() - cached.timestamp < 24 * 60 * 60 * 1000)) { // 24 hour cache
-            return { fid, user: cached };
-          }
-        } catch (error) {
-          console.error(`Error fetching cached Farcaster user for FID ${fid}:`, error);
-        }
-        return { fid, user: null };
-      });
-
-      const cacheResults = await Promise.all(cachePromises);
-
-      cacheResults.forEach(result => {
-        if (result.user) {
-          userMap.set(result.fid, result.user);
-        } else {
-          fidsToFetch.push(result.fid);
-        }
-      });
-    } else {
-      fidsToFetch.push(...fids);
-    }
-
-    // If all users were in cache, return them
-    if (fidsToFetch.length === 0) {
-      return userMap;
-    }
 
     // Fetch users in chunks of 100 (API limit)
     const chunkSize = 100;
-    for (let i = 0; i < fidsToFetch.length; i += chunkSize) {
-      const fidChunk = fidsToFetch.slice(i, i + chunkSize);
+    for (let i = 0; i < fids.length; i += chunkSize) {
+      const fidChunk = fids.slice(i, i + chunkSize);
 
       try {
         const url = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${fidChunk.join(',')}`;
@@ -99,16 +63,16 @@ export class WarpcastApiClient {
           continue;
         }
 
-        const data = await response.json();
+        const data = await response.json() as { users?: Array<{ fid?: number, username?: string, display_name?: string, pfp_url?: string }> };
 
         if (!data.users || !Array.isArray(data.users)) {
           console.error('Invalid response from Neynar API:', data);
           continue;
         }
 
-        // Process and cache users
-        const cachePromises = data.users.map(async (userData: any) => {
-          if (!userData || !userData.fid) return;
+        // Process and add users to the map
+        for (const userData of data.users) {
+          if (!userData || !userData.fid) continue;
 
           const user: FarcasterUserCache = {
             fid: userData.fid,
@@ -119,15 +83,7 @@ export class WarpcastApiClient {
           };
 
           userMap.set(user.fid, user);
-
-          // Cache user data
-          if (kv) {
-            const cacheKey = `farcaster_user_${user.fid}`;
-            await kv.put(cacheKey, JSON.stringify(user), { expirationTtl: 86400 });
-          }
-        });
-
-        await Promise.all(cachePromises);
+        }
 
       } catch (error) {
         console.error(`Error fetching Farcaster users in bulk:`, error);
@@ -178,49 +134,16 @@ export class WarpcastApiClient {
   }
 
   // Check and cache verified GitHub users for a list of FIDs
-  async getVerifiedGithubUsersForFids(c: Context, fids: number[]): Promise<WarpcastVerification[]> {
-    const kv = c.env.GITHUB_USERS;
+  async getVerifiedGithubUsersForFids(fids: number[]): Promise<WarpcastVerification[]> {
     const cachedUsers: WarpcastVerification[] = [];
     const fidsToCheck: number[] = [];
 
     // Define cache freshness (1 hour in milliseconds)
-    const CACHE_FRESHNESS = 60 * 60 * 1000;
-
-    // Check cache in parallel
-    if (kv) {
-      const cachePromises = fids.map(async (fid) => {
-        try {
-          const cacheKey = `github_user_${fid}`;
-          const cached = await kv.get(cacheKey, 'json') as (WarpcastVerification & { timestamp?: number }) | null;
-
-          // Check if cache exists and is fresh (less than 1 hour old)
-          const isFresh = cached && cached.timestamp &&
-            (Date.now() - cached.timestamp < CACHE_FRESHNESS);
-
-          return { fid, cached: isFresh ? cached : null };
-        } catch (error) {
-          console.error(`Cache error for FID ${fid}:`, error);
-          return { fid, cached: null };
-        }
-      });
-
-      const cacheResults = await Promise.all(cachePromises);
-
-      cacheResults.forEach(result => {
-        if (result.cached) {
-          cachedUsers.push(result.cached);
-        } else {
-          fidsToCheck.push(result.fid);
-        }
-      });
-    } else {
-      fidsToCheck.push(...fids);
-    }
 
     // If we have all users in cache and they're all fresh, return them
     if (fidsToCheck.length === 0) {
       // Enhance with Farcaster user info if not already cached
-      return await this.enhanceVerificationsWithFarcasterInfo(c, cachedUsers);
+      return await this.enhanceVerificationsWithFarcasterInfo(cachedUsers);
     }
 
     // Fetch verifications for missing or stale users
@@ -233,25 +156,14 @@ export class WarpcastApiClient {
       timestamp: Date.now()
     }));
 
-    // Cache results in parallel
-    if (kv) {
-      const cachePromises = timestampedVerifications.map(verification => {
-        const cacheKey = `github_user_${verification.fid}`;
-        return kv.put(cacheKey, JSON.stringify(verification), { expirationTtl: 86400 }); // 24 hour TTL as backup
-      });
-
-      await Promise.all(cachePromises);
-    }
-
     const allVerifications = [...cachedUsers, ...timestampedVerifications];
 
     // Enhance with Farcaster user info
-    return await this.enhanceVerificationsWithFarcasterInfo(c, allVerifications);
+    return await this.enhanceVerificationsWithFarcasterInfo(allVerifications);
   }
 
   // Helper to add Farcaster user info to verifications
   private async enhanceVerificationsWithFarcasterInfo(
-    c: Context,
     verifications: WarpcastVerification[]
   ): Promise<WarpcastVerification[]> {
     if (verifications.length === 0) {
@@ -263,7 +175,7 @@ export class WarpcastApiClient {
     const fids = [...new Set(verifications.map(v => v.fid))];
 
     // Get all user data in bulk
-    const userMap = await this.getFarcasterUsersInBulk(fids, c);
+    const userMap = await this.getUserData(fids);
 
     // Enhance verifications with Farcaster user data
     return verifications.map(verification => {

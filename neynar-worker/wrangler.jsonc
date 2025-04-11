@@ -1,0 +1,41 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "neynar-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-04-09",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gitcast-db",
+      "database_id": "a8ecd207-bc28-4f38-86b1-06115f5a76ea"
+    }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "neynar-tasks",
+        "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_concurrency": 1
+      }
+    ],
+    "producers": [
+      {
+        "queue": "github-tasks",
+        "binding": "github_tasks"
+      },
+      {
+        "queue": "neynar-tasks",
+        "binding": "neynar_tasks"
+      }
+    ]
+  }
+}

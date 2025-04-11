@@ -1,6 +1,5 @@
 import { Octokit } from "octokit";
-import { GithubEvent, GithubEventsArray } from "./types";
-import { Context } from "hono";
+import type { GithubEvent } from "./types";
 
 interface GithubApiError extends Error {
   status?: number;
@@ -14,9 +13,9 @@ interface GithubApiError extends Error {
 export class GitHubApiClient {
   private octokit: Octokit;
 
-  constructor(c: Context) {
+  constructor(token: string) {
     this.octokit = new Octokit({
-      auth: c.env.GITHUB_TOKEN,
+      auth: token,
     });
   }
 
@@ -36,7 +35,7 @@ export class GitHubApiClient {
         console.warn(`GitHub API rate limit running low: ${rateLimit} remaining`);
       }
 
-      const events = GithubEventsArray.parse(response.data);
+      const events = response.data as GithubEvent[];
 
       return events.map(event => ({
         ...event,

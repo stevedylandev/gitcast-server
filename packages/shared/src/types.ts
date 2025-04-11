@@ -1,44 +1,37 @@
-import { z } from "zod";
-
+import type { D1Database, Queue } from "@cloudflare/workers-types"
 // Define GitHub API response types
-export const GithubUserSchema = z.object({
-  login: z.string(),
-  id: z.number(),
-  avatar_url: z.string(),
-  url: z.string(),
-  html_url: z.string(),
-  name: z.string().optional(),
-  bio: z.string().optional()
-});
+export interface GithubUser {
+  login: string;
+  id: number;
+  avatar_url: string;
+  url: string;
+  html_url: string;
+  name?: string;
+  bio?: string;
+}
 
-export type GithubUser = z.infer<typeof GithubUserSchema>;
-
-export const GithubEventSchema = z.object({
-  id: z.string(),
-  type: z.string(),
-  actor: z.object({
-    id: z.number(),
-    login: z.string(),
-    display_login: z.string().optional(),
-    avatar_url: z.string()
-  }),
-  repo: z.object({
-    id: z.number(),
-    name: z.string(),
-    url: z.string()
-  }),
-  payload: z.any(),
-  public: z.boolean(),
-  created_at: z.string()
-});
-
-export type GithubEvent = z.infer<typeof GithubEventSchema> & {
+export interface GithubEvent {
+  id: string;
+  type: string;
+  actor: {
+    id: number;
+    login: string;
+    display_login?: string;
+    avatar_url: string;
+  };
+  repo: {
+    id: number;
+    name: string;
+    url: string;
+  };
+  payload: any;
+  public: boolean;
+  created_at: string | Date;
   username?: string;
   fid?: number;
-  created_at: Date | string;
-};
+}
 
-export const GithubEventsArray = z.array(GithubEventSchema);
+export type GithubEventsArray = GithubEvent[];
 
 // Warpcast verification type
 export type WarpcastVerification = {
@@ -120,4 +113,25 @@ export interface FarcasterUserCache {
   display_name: string;
   pfp_url: string;
   timestamp: number;
+}
+
+export interface NeynarQueueMessage {
+  type: 'update_user' | 'fetch_user_data' | 'check_github_verifications';
+  fid?: number;
+  fids?: number[];
+}
+
+export interface GitHubQueueMessage {
+  type: 'fetch_github_events';
+  fid: number;
+  github_username: string;
+}
+
+// Environment types for Workers
+export interface Env {
+  DB: D1Database;
+  neynar_tasks: Queue;
+  github_tasks: Queue;
+  NEYNAR_API_KEY: string;
+  GITHUB_TOKEN: string;
 }
