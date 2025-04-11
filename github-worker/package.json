@@ -1,5 +1,5 @@
 {
-	"name": "github-worker",
+	"name": "@gitcast/github-worker",
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
@@ -8,6 +8,9 @@
 		"start": "wrangler dev",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
+	},
+	"dependencies": {
+		"@gitcast/shared": "workspace:*"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.7.5",

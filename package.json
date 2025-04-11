@@ -1,0 +1,14 @@
+{
+  "name": "gitcast-server",
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run build:shared",
+    "build:shared": "bun run --cwd packages/shared build",
+    "dev": "bun run dev:worker",
+    "dev:worker": "bun run --cwd packages/github-worker dev"
+  },
+  "type": "module"
+}

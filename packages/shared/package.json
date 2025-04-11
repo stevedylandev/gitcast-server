@@ -1,0 +1,17 @@
+{
+  "name": "@gitcast/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "module": "src/index.ts",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target node"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250410.0",
+    "bun-types": "^1.2.9"
+  }
+}

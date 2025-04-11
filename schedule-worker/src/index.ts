@@ -14,28 +14,84 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+import { WarpcastApiClient, type Env } from "@gitcast/shared"
 export default {
-	// Our fetch handler is invoked on a HTTP request: we can send a message to a queue
-	// during (or after) a request.
-	// https://developers.cloudflare.com/queues/platform/javascript-apis/#producer
-	async fetch(req, env, ctx): Promise<Response> {
-		// To send a message on a queue, we need to create the queue first
-		// https://developers.cloudflare.com/queues/get-started/#3-create-a-queue
-		await env.MY_QUEUE.send({
-			url: req.url,
-			method: req.method,
-			headers: Object.fromEntries(req.headers),
-		});
-		return new Response('Sent message to the queue');
-	},
-	// The queue handler is invoked when a batch of messages is ready to be delivered
-	// https://developers.cloudflare.com/queues/platform/javascript-apis/#messagebatch
-	async queue(batch, env): Promise<void> {
-		// A queue consumer can make requests to other endpoints on the Internet,
-		// write to R2 object storage, query a D1 Database, and much more.
-		for (let message of batch.messages) {
-			// Process each message (we'll just log these)
-			console.log(`message ${message.id} processed: ${JSON.stringify(message.body)}`);
-		}
-	},
-} satisfies ExportedHandler<Env, Error>;
+  async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+    const warpcast = new WarpcastApiClient(env.NEYNAR_API_KEY)
+    const db = env.DB;
+
+    // Refresh GitHub verifications every 2 days
+    if (event.cron === "0 0 */2 * *") {
+      try {
+        // Get all GitHub verifications
+        const { verifications } = await warpcast.getGithubVerifications();
+
+        // Update the database
+        for (const verification of verifications) {
+          await db.prepare(`
+           INSERT INTO users (fid, github_username, last_updated)
+           VALUES (?, ?, ?)
+           ON CONFLICT (fid) DO UPDATE SET
+           github_username = excluded.github_username,
+           last_updated = excluded.last_updated
+         `)
+            .bind(verification.fid, verification.platformUsername, Date.now())
+            .run();
+
+          // Queue user data fetching
+          await env.neynar_tasks.send({
+            type: 'fetch_user_data',
+            fid: verification.fid
+          });
+        }
+      } catch (error) {
+        console.error('Error refreshing GitHub verifications:', error);
+      }
+    }
+
+    // Refresh GitHub events for all users with GitHub usernames every 30 minutes
+    if (event.cron === "0 */5 * * *") {
+      try {
+        // Get all users with GitHub usernames
+        const users = await db.prepare(`
+          SELECT fid, github_username
+          FROM users
+          WHERE github_username IS NOT NULL
+        `).all();
+
+        // Queue GitHub events fetching for each user
+        for (const user of users.results) {
+          await env.github_tasks.send({
+            type: 'fetch_github_events',
+            fid: user.fid,
+            github_username: user.github_username
+          });
+        }
+      } catch (error) {
+        console.error('Error refreshing GitHub events:', error);
+      }
+    }
+
+    if (event.cron === "0 0 * * *") {
+      try {
+        // Calculate the timestamp for 5 days ago
+        const fiveDaysAgo = new Date();
+        fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+        const cutoffTimestamp = fiveDaysAgo.toISOString();
+
+        // Delete events older than 5 days
+        const result = await db.prepare(`
+          DELETE FROM github_events
+          WHERE created_at < ?
+        `)
+          .bind(cutoffTimestamp)
+          .run();
+
+        console.log(`Cleaned up ${result.meta?.changes || 0} events older than 5 days`);
+      } catch (error) {
+        console.error('Error cleaning up old events:', error);
+      }
+    }
+
+  }
+}

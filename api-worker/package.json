@@ -1,5 +1,5 @@
 {
-  "name": "gitcast-server",
+  "name": "@gitcast/api-worker",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify"

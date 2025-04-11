@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "gitcast-server",
+  "name": "gitcast-api-worker",
   "main": "src/index.ts",
   "compatibility_date": "2025-04-04",
   // "compatibility_flags": [
@@ -9,25 +9,38 @@
   // "vars": {
   //   "MY_VAR": "my-variable"
   // },
-  "kv_namespaces": [
-    {
-      "binding": "GITHUB_USERS",
-      "id": "ab664058003045f885ee277c23e002b5"
-    }
-  ],
+  // "kv_namespaces": [
+  //   {
+  //     "binding": "GITHUB_USERS",
+  //     "id": "ab664058003045f885ee277c23e002b5"
+  //   }
+  // ],
   // "r2_buckets": [
   //   {
   //     "binding": "MY_BUCKET",
   //     "bucket_name": "my-bucket"
   //   }
   // ],
-  // "d1_databases": [
-  //   {
-  //     "binding": "MY_DB",
-  //     "database_name": "my-database",
-  //     "database_id": ""
-  //   }
-  // ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gitcast-db",
+      "database_id": "a8ecd207-bc28-4f38-86b1-06115f5a76ea"
+    }
+  ],
+  "queues": {
+    "consumers": [],
+    "producers": [
+      {
+        "queue": "neynar-tasks",
+        "binding": "neynar_tasks"
+      },
+      {
+        "queue": "github-tasks",
+        "binding": "github_tasks"
+      }
+    ]
+  }
   // "ai": {
   //   "binding": "AI"
   // },
