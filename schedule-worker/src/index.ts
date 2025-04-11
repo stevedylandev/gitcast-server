@@ -50,7 +50,7 @@ export default {
     }
 
     // Refresh GitHub events for all users with GitHub usernames every 30 minutes
-    if (event.cron === "0 */5 * * *") {
+    if (event.cron === "*/30 * * * *") {
       try {
         // Get all users with GitHub usernames
         const users = await db.prepare(`

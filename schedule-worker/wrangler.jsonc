@@ -32,7 +32,7 @@
   "triggers": {
     "crons": [
       "0 0 */2 * *", // Run every 12 hours for GitHub verification refresh
-      "0 */5 * * *", // Run every 30 minutes for GitHub events refresh
+      "*/30 * * * *", // Run every 30 minutes for GitHub events refresh
       "0 0 * * *" // Run once daily to clean up old events
     ]
   },
