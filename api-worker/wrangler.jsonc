@@ -38,7 +38,7 @@
       {
         "queue": "github-tasks",
         "binding": "github_tasks"
-      }
+      },
     ]
   }
   // "ai": {

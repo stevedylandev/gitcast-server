@@ -19,6 +19,24 @@ export class GitHubApiClient {
     });
   }
 
+  async getUserStarredRepos(username: string, page: number = 1, per_page: number = 100) {
+    try {
+      const response = await this.octokit.request('GET /users/{username}/starred', {
+        username,
+        page,
+        per_page,
+        headers: {
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching starred repos for ${username}:`, error);
+      return [];
+    }
+  }
+
   async getUserEvents(username: string, page = 1, perPage = 10): Promise<GithubEvent[]> {
     try {
       const response = await this.octokit.request('GET /users/{username}/events', {

@@ -185,6 +185,172 @@ app.get("/status/:fid", async (c) => {
   }
 });
 
+app.get("/popular-repos/:fid", async (c) => {
+  const fid = parseInt(c.req.param('fid'));
+  const limit = parseInt(c.req.query('limit') || '20');
 
+  if (isNaN(fid)) {
+    return c.json({ message: "Invalid FID format" }, { status: 400 });
+  }
+
+  try {
+    // Query repositories starred by people the user follows + popularity metrics
+    const reposQuery = `
+      SELECT
+        r.*,
+        COUNT(DISTINCT us.fid) AS followers_who_starred,
+        CASE WHEN user_star.fid IS NOT NULL THEN 1 ELSE 0 END AS user_starred
+      FROM repositories r
+      JOIN user_stars us ON r.id = us.repo_id
+      JOIN follows f ON us.fid = f.following_fid
+      LEFT JOIN user_stars user_star ON r.id = user_star.repo_id AND user_star.fid = ?
+      WHERE f.follower_fid = ?
+      GROUP BY r.id
+      ORDER BY followers_who_starred DESC, r.stars_count DESC
+      LIMIT ?
+    `;
+
+    const reposResult = await c.env.DB.prepare(reposQuery)
+      .bind(fid, fid, limit)
+      .all();
+
+    return c.json({
+      repositories: reposResult.results
+    });
+  } catch (error) {
+    console.error("Error fetching popular repositories:", error);
+    return c.json({ message: "Failed to fetch repository data" }, { status: 500 });
+  }
+});
+
+// Get repositories starred by a specific user
+app.get("/user-stars/:fid", async (c) => {
+  const fid = parseInt(c.req.param('fid'));
+  const limit = parseInt(c.req.query('limit') || '50');
+  const page = parseInt(c.req.query('page') || '1');
+  const offset = (page - 1) * limit;
+
+  if (isNaN(fid)) {
+    return c.json({ message: "Invalid FID format" }, { status: 400 });
+  }
+
+  try {
+    // Query repositories starred by the user
+    const starsQuery = `
+      SELECT
+        r.*,
+        COUNT(DISTINCT us.fid) AS total_stars_in_network
+      FROM repositories r
+      JOIN user_stars us_user ON r.id = us_user.repo_id AND us_user.fid = ?
+      LEFT JOIN user_stars us ON r.id = us.repo_id
+      GROUP BY r.id
+      ORDER BY r.stars_count DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const starsResult = await c.env.DB.prepare(starsQuery)
+      .bind(fid, limit, offset)
+      .all();
+
+    // Queue fetch of starred repos if we don't have any yet
+    if (starsResult.results.length === 0) {
+      const user = await c.env.DB.prepare("SELECT github_username FROM users WHERE fid = ?")
+        .bind(fid)
+        .first();
+
+      if (user && user.github_username) {
+        await c.env.github_tasks.send({
+          type: 'fetch_starred_repos',
+          fid: fid,
+          github_username: user.github_username
+        });
+      }
+    }
+
+    return c.json({
+      repositories: starsResult.results,
+      page,
+      limit,
+      hasMore: starsResult.results.length === limit
+    });
+  } catch (error) {
+    console.error("Error fetching user stars:", error);
+    return c.json({ message: "Failed to fetch starred repositories" }, { status: 500 });
+  }
+});
+
+// Initialize repository data for a user
+app.post("/init-repos/:fid", async (c) => {
+  const fid = parseInt(c.req.param('fid'));
+
+  if (isNaN(fid)) {
+    return c.json({ message: "Invalid FID format" }, { status: 400 });
+  }
+
+  try {
+    // Get GitHub username for this user
+    const user = await c.env.DB.prepare("SELECT github_username FROM users WHERE fid = ?")
+      .bind(fid)
+      .first();
+
+    if (!user || !user.github_username) {
+      return c.json({ message: "User has no GitHub username configured" }, { status: 400 });
+    }
+
+    // Queue fetch of starred repos
+    await c.env.github_tasks.send({
+      type: 'fetch_starred_repos',
+      fid: fid,
+      github_username: user.github_username
+    });
+
+    return c.json({
+      message: "Repository fetch initiated",
+      note: "Starred repositories will be populated in the background"
+    });
+  } catch (error) {
+    console.error("Repository init error:", error);
+    return c.json({ message: "Failed to initialize repository data" }, { status: 500 });
+  }
+});
+
+app.get("/top-repos", async (c) => {
+  const limit = parseInt(c.req.query('limit') || '50');
+  const page = parseInt(c.req.query('page') || '1');
+  const offset = (page - 1) * limit;
+
+  try {
+    // Query repositories ranked by both GitHub stars and Farcaster user engagement
+    const reposQuery = `
+      SELECT
+        r.*,
+        COUNT(DISTINCT us.fid) AS farcaster_stars_count
+      FROM repositories r
+      LEFT JOIN user_stars us ON r.id = us.repo_id
+      GROUP BY r.id
+      ORDER BY
+        -- This formula balances GitHub popularity with Farcaster engagement
+        (r.stars_count * 0.7) + (COUNT(DISTINCT us.fid) * 100 * 0.3) DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const reposResult = await c.env.DB.prepare(reposQuery)
+      .bind(limit, offset)
+      .all();
+
+    return c.json({
+      repositories: reposResult.results.map(repo => ({
+        ...repo,
+        farcaster_stars_count: repo.farcaster_stars_count || 0,
+      })),
+      page,
+      limit,
+      hasMore: reposResult.results.length === limit
+    });
+  } catch (error) {
+    console.error("Error fetching top repositories:", error);
+    return c.json({ message: "Failed to fetch top repositories" }, { status: 500 });
+  }
+});
 
 export default app;
