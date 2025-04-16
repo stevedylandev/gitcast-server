@@ -20,6 +20,38 @@ export default {
     const warpcast = new WarpcastApiClient(env.NEYNAR_API_KEY)
     const db = env.DB;
 
+    if (event.cron === "0 12 * * *") { // Run daily at 12:00 UTC
+      try {
+        // Get all users with GitHub usernames
+        const users = await db.prepare(`
+          SELECT fid, github_username
+          FROM users
+          WHERE github_username IS NOT NULL
+        `).all();
+
+        console.log(`Queuing starred repository refresh for ${users.results.length} users`);
+
+        // Queue repository fetching for each user in batches to avoid overloading
+        const batchSize = 100;
+        for (let i = 0; i < users.results.length; i += batchSize) {
+          const batch = users.results.slice(i, i + batchSize);
+          console.log(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(users.results.length / batchSize)}`);
+
+          for (const user of batch) {
+            await env.github_tasks.send({
+              type: 'fetch_starred_repos',
+              fid: user.fid,
+              github_username: user.github_username
+            });
+          }
+        }
+
+        console.log(`Successfully queued repository star refresh for all users`);
+      } catch (error) {
+        console.error('Error refreshing repository stars:', error);
+      }
+    }
+
     // Refresh GitHub verifications every 2 days
     if (event.cron === "0 0 */2 * *") {
       try {

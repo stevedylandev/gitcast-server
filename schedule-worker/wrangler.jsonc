@@ -33,7 +33,8 @@
     "crons": [
       "0 0 */2 * *", // Run every 12 hours for GitHub verification refresh
       "*/30 * * * *", // Run every 30 minutes for GitHub events refresh
-      "0 0 * * *" // Run once daily to clean up old events
+      "0 0 * * *", // Run once daily to clean up old events
+      "0 12 * * *" // Run once daily to refresh repository stars
     ]
   },
   /**
