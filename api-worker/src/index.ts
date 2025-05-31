@@ -220,6 +220,53 @@ app.post("/init-repos/:fid", async (c) => {
   }
 });
 
+app.get("/users", async (c) => {
+  const fid = parseInt(c.req.query('fid') || '0');
+  const limit = parseInt(c.req.query('limit') || '20');
+  const page = parseInt(c.req.query('page') || '1');
+
+  const offset = (page - 1) * limit;
+
+  try {
+    let usersQuery;
+    let usersResult;
+
+    // If fid is provided (not 0), get only that specific user
+    if (fid > 0) {
+      usersQuery = `
+        SELECT *
+        FROM users
+        WHERE fid = ?
+      `;
+      usersResult = await c.env.DB.prepare(usersQuery)
+        .bind(fid)
+        .all();
+    } else {
+      // Otherwise, get all users with pagination
+      usersQuery = `
+        SELECT *
+        FROM users
+        ORDER BY
+          farcaster_username
+        LIMIT ? OFFSET ?
+      `;
+      usersResult = await c.env.DB.prepare(usersQuery)
+        .bind(limit, offset)
+        .all();
+    }
+
+    return c.json({
+      users: usersResult.results,
+      page,
+      limit,
+      hasMore: !fid && usersResult.results.length === limit, // Only relevant when not filtering by fid
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    return c.json({ message: "Failed to fetch users" }, { status: 500 });
+  }
+});
+
 app.get("/top-repos", async (c) => {
   const limit = parseInt(c.req.query('limit') || '50');
   const page = parseInt(c.req.query('page') || '1');
