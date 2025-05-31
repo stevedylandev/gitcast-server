@@ -54,6 +54,27 @@ app.get("/feed/:fid", async (c) => {
       .bind(fid, fid, limit, offset)
       .all();
 
+    if (eventsResult.results.length === 0) {
+      console.log("no events, initialzing FID:", fid)
+      await c.env.DB.prepare(`
+        INSERT INTO users (fid, last_updated)
+        VALUES (?, ?)
+        ON CONFLICT (fid) DO UPDATE SET last_updated = excluded.last_updated
+      `).bind(fid, Date.now()).run();
+
+      // Queue user data fetching
+      await c.env.neynar_tasks.send({
+        type: 'fetch_user_data',
+        fid: fid
+      });
+
+      // Queue following data fetching
+      await c.env.neynar_tasks.send({
+        type: 'update_user',
+        fid: fid
+      });
+    }
+
     // Format for response
     const events = eventsResult.results.map(row => ({
       id: row.id,
