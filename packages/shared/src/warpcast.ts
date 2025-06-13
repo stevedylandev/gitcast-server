@@ -93,6 +93,81 @@ export class WarpcastApiClient {
     return userMap;
   }
 
+  /**
+   * Get GitHub verification for a specific FID
+   * More reliable than fetching all verifications since it queries directly
+   */
+  async getGithubVerificationForFid(fid: number): Promise<WarpcastVerification | null> {
+    try {
+      const url = `${this.baseUrl}/fc/account-verifications?fid=${fid}&platform=github`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log(`No GitHub verification found for FID ${fid}`);
+          return null;
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json() as {
+        result: { verifications: WarpcastVerification[] }
+      };
+
+      // Should only be one GitHub verification per user, but take the first one
+      const verification = data.result.verifications?.[0];
+
+      if (verification) {
+        console.log(`Found GitHub verification for FID ${fid}: ${verification.platformUsername}`);
+        return verification;
+      }
+      console.log(`No GitHub verification found for FID ${fid}`);
+      return null;
+    } catch (error) {
+      console.error(`Error fetching GitHub verification for FID ${fid}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get GitHub verifications for multiple specific FIDs
+   * More efficient than fetching all verifications when you only need specific ones
+   */
+  async getGithubVerificationsForFids(fids: number[]): Promise<WarpcastVerification[]> {
+    console.log(`Fetching GitHub verifications for ${fids.length} specific FIDs`);
+
+    const verifications: WarpcastVerification[] = [];
+
+    // Process in chunks to avoid rate limiting
+    const chunkSize = 5; // Conservative to avoid rate limits
+    const delay = 200; // 200ms delay between requests
+
+    for (let i = 0; i < fids.length; i += chunkSize) {
+      const fidChunk = fids.slice(i, i + chunkSize);
+
+      console.log(`Processing FID chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(fids.length / chunkSize)}: ${fidChunk.join(', ')}`);
+
+      // Process chunk in parallel
+      const chunkPromises = fidChunk.map(fid => this.getGithubVerificationForFid(fid));
+      const chunkResults = await Promise.all(chunkPromises);
+
+      // Add non-null results
+      for (const verification of chunkResults) {
+        if (verification) {
+          verifications.push(verification);
+        }
+      }
+
+      // Add delay between chunks to avoid rate limiting
+      if (i + chunkSize < fids.length) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    console.log(`Found ${verifications.length} GitHub verifications out of ${fids.length} requested FIDs`);
+    return verifications;
+  }
+
   async getGithubVerifications(cursor?: string): Promise<{
     verifications: WarpcastVerification[];
     nextCursor?: string;
@@ -169,7 +244,6 @@ export class WarpcastApiClient {
     if (verifications.length === 0) {
       return [];
     }
-
 
     // Extract unique FIDs
     const fids = [...new Set(verifications.map(v => v.fid))];

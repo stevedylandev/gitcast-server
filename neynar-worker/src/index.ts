@@ -123,31 +123,39 @@ export default {
         }
         else if (data.type === 'check_github_verifications') {
           const fids = data.fids;
-          console.log(`Checking GitHub verifications for ${fids?.length || 0} FIDs`);
+          console.log(`Checking GitHub verifications for ${fids?.length || 0} specific FIDs: ${fids?.join(', ')}`);
 
           try {
-            const result = await warpcast.getGithubVerifications();
-            console.log(`Found ${result.verifications?.length || 0} total GitHub verifications`);
+            if (!fids || fids.length === 0) {
+              console.log('No FIDs provided for GitHub verification check');
+              return;
+            }
 
-            // Filter verifications to those in our list of FIDs
-            const matchingVerifications = result.verifications.filter(v =>
-              fids?.includes(v.fid)
-            );
-
-            console.log(`Found ${matchingVerifications.length} matching GitHub verifications for our users`);
+            // Use the new FID-specific method instead of fetching all verifications
+            const verifications = await warpcast.getGithubVerificationsForFids(fids);
+            console.log(`Found ${verifications.length} GitHub verifications for the requested FIDs`);
 
             // Update database with GitHub usernames
-            for (const verification of matchingVerifications) {
+            for (const verification of verifications) {
               console.log(`Processing GitHub verification for FID ${verification.fid} (GitHub: ${verification.platformUsername})`);
 
-              await db.prepare(`
-                 UPDATE users SET
-                 github_username = ?,
-                 last_updated = ?
-                 WHERE fid = ?
-               `)
+              const updateResult = await db.prepare(`
+                  UPDATE users SET
+                  github_username = ?,
+                  last_updated = ?
+                  WHERE fid = ?
+                `)
                 .bind(verification.platformUsername, Date.now(), verification.fid)
                 .run();
+
+              if (updateResult.meta?.changes === 0) {
+                // User doesn't exist yet, create them
+                console.log(`User FID ${verification.fid} doesn't exist, creating new user record`);
+                await db.prepare(`
+                   INSERT INTO users (fid, github_username, last_updated)
+                   VALUES (?, ?, ?)
+                 `).bind(verification.fid, verification.platformUsername, Date.now()).run();
+              }
 
               // Queue GitHub events fetching
               await env.github_tasks.send({
@@ -156,8 +164,18 @@ export default {
                 github_username: verification.platformUsername
               });
 
-              console.log(`Queued GitHub events fetch for ${verification.platformUsername}`);
+              console.log(`✅ Updated GitHub username and queued events fetch for FID ${verification.fid} -> ${verification.platformUsername}`);
             }
+
+            // Log which FIDs didn't have GitHub verifications
+            const verifiedFids = verifications.map(v => v.fid);
+            const unverifiedFids = fids.filter(fid => !verifiedFids.includes(fid));
+
+            if (unverifiedFids.length > 0) {
+              console.log(`❌ No GitHub verifications found for FIDs: ${unverifiedFids.join(', ')}`);
+            }
+
+            console.log(`GitHub verification check completed: ${verifications.length}/${fids.length} FIDs had GitHub verifications`);
           } catch (error) {
             console.error('Error processing GitHub verifications:', error);
           }
