@@ -2,13 +2,17 @@
   "name": "gitcast-server",
   "version": "1.0.0",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "api-worker",
+    "github-worker",
+    "neynar-worker",
+    "schedule-worker"
   ],
   "scripts": {
     "build": "bun run build:shared",
     "build:shared": "bun run --cwd packages/shared build",
     "dev": "bun run dev:worker",
-    "dev:worker": "bun run --cwd packages/github-worker dev"
+    "dev:worker": "bun run --cwd github-worker dev"
   },
   "type": "module"
 }

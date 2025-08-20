@@ -8,8 +8,7 @@
     "build": "bun build ./src/index.ts --outdir ./dist --target node"
   },
   "dependencies": {
-    "@octokit/rest": "^20.0.0",
-    "gitcast-server/shared": "workspace:*"
+    "@octokit/rest": "^20.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250410.0",
