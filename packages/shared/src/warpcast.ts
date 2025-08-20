@@ -1,4 +1,9 @@
-import type { WarpcastVerification, NeynarFollowingResponse, FarcasterUserCache, NeynarUser } from "./types";
+import type {
+  WarpcastVerification,
+  NeynarFollowingResponse,
+  FarcasterUserCache,
+  NeynarUser,
+} from "./types";
 
 export class WarpcastApiClient {
   private baseUrl: string;
@@ -6,10 +11,13 @@ export class WarpcastApiClient {
 
   constructor(neynarApiKey: string) {
     this.baseUrl = "https://api.warpcast.com";
-    this.neynarApiKey = neynarApiKey
+    this.neynarApiKey = neynarApiKey;
   }
 
-  async getFollowing(fid: number, viewerFid: number = fid): Promise<NeynarFollowingResponse> {
+  async getFollowing(
+    fid: number,
+    viewerFid: number = fid,
+  ): Promise<NeynarFollowingResponse> {
     if (!this.neynarApiKey) {
       console.error("Neynar API key not set");
       return { users: [] };
@@ -19,12 +27,12 @@ export class WarpcastApiClient {
       const url = `https://api.neynar.com/v2/farcaster/following?fid=${fid}&viewer_fid=${viewerFid}&sort_type=algorithmic&limit=100`;
       const response = await fetch(url, {
         headers: {
-          'accept': 'application/json',
-          'x-api-key': this.neynarApiKey
-        }
+          accept: "application/json",
+          "x-api-key": this.neynarApiKey,
+        },
       });
 
-      const data = await response.json() as NeynarFollowingResponse;
+      const data = (await response.json()) as NeynarFollowingResponse;
       return data;
     } catch (error) {
       console.error("Error fetching following data from Neynar:", error);
@@ -50,23 +58,32 @@ export class WarpcastApiClient {
       const fidChunk = fids.slice(i, i + chunkSize);
 
       try {
-        const url = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${fidChunk.join(',')}`;
+        const url = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${fidChunk.join(",")}`;
         const response = await fetch(url, {
           headers: {
-            'accept': 'application/json',
-            'x-api-key': this.neynarApiKey
-          }
+            accept: "application/json",
+            "x-api-key": this.neynarApiKey,
+          },
         });
 
         if (!response.ok) {
-          console.error(`Neynar API error: ${response.status} ${response.statusText}`);
+          console.error(
+            `Neynar API error: ${response.status} ${response.statusText}`,
+          );
           continue;
         }
 
-        const data = await response.json() as { users?: Array<{ fid?: number, username?: string, display_name?: string, pfp_url?: string }> };
+        const data = (await response.json()) as {
+          users?: Array<{
+            fid?: number;
+            username?: string;
+            display_name?: string;
+            pfp_url?: string;
+          }>;
+        };
 
         if (!data.users || !Array.isArray(data.users)) {
-          console.error('Invalid response from Neynar API:', data);
+          console.error("Invalid response from Neynar API:", data);
           continue;
         }
 
@@ -76,15 +93,14 @@ export class WarpcastApiClient {
 
           const user: FarcasterUserCache = {
             fid: userData.fid,
-            username: userData.username || '',
-            display_name: userData.display_name || '',
-            pfp_url: userData.pfp_url || '',
-            timestamp: Date.now()
+            username: userData.username || "",
+            display_name: userData.display_name || "",
+            pfp_url: userData.pfp_url || "",
+            timestamp: Date.now(),
           };
 
           userMap.set(user.fid, user);
         }
-
       } catch (error) {
         console.error(`Error fetching Farcaster users in bulk:`, error);
       }
@@ -97,7 +113,9 @@ export class WarpcastApiClient {
    * Get GitHub verification for a specific FID
    * More reliable than fetching all verifications since it queries directly
    */
-  async getGithubVerificationForFid(fid: number): Promise<WarpcastVerification | null> {
+  async getGithubVerificationForFid(
+    fid: number,
+  ): Promise<WarpcastVerification | null> {
     try {
       const url = `${this.baseUrl}/fc/account-verifications?fid=${fid}&platform=github`;
 
@@ -110,21 +128,26 @@ export class WarpcastApiClient {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json() as {
-        result: { verifications: WarpcastVerification[] }
+      const data = (await response.json()) as {
+        result: { verifications: WarpcastVerification[] };
       };
 
       // Should only be one GitHub verification per user, but take the first one
       const verification = data.result.verifications?.[0];
 
       if (verification) {
-        console.log(`Found GitHub verification for FID ${fid}: ${verification.platformUsername}`);
+        console.log(
+          `Found GitHub verification for FID ${fid}: ${verification.platformUsername}`,
+        );
         return verification;
       }
       console.log(`No GitHub verification found for FID ${fid}`);
       return null;
     } catch (error) {
-      console.error(`Error fetching GitHub verification for FID ${fid}:`, error);
+      console.error(
+        `Error fetching GitHub verification for FID ${fid}:`,
+        error,
+      );
       return null;
     }
   }
@@ -133,8 +156,12 @@ export class WarpcastApiClient {
    * Get GitHub verifications for multiple specific FIDs
    * More efficient than fetching all verifications when you only need specific ones
    */
-  async getGithubVerificationsForFids(fids: number[]): Promise<WarpcastVerification[]> {
-    console.log(`Fetching GitHub verifications for ${fids.length} specific FIDs`);
+  async getGithubVerificationsForFids(
+    fids: number[],
+  ): Promise<WarpcastVerification[]> {
+    console.log(
+      `Fetching GitHub verifications for ${fids.length} specific FIDs`,
+    );
 
     const verifications: WarpcastVerification[] = [];
 
@@ -145,10 +172,14 @@ export class WarpcastApiClient {
     for (let i = 0; i < fids.length; i += chunkSize) {
       const fidChunk = fids.slice(i, i + chunkSize);
 
-      console.log(`Processing FID chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(fids.length / chunkSize)}: ${fidChunk.join(', ')}`);
+      console.log(
+        `Processing FID chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(fids.length / chunkSize)}: ${fidChunk.join(", ")}`,
+      );
 
       // Process chunk in parallel
-      const chunkPromises = fidChunk.map(fid => this.getGithubVerificationForFid(fid));
+      const chunkPromises = fidChunk.map((fid) =>
+        this.getGithubVerificationForFid(fid),
+      );
       const chunkResults = await Promise.all(chunkPromises);
 
       // Add non-null results
@@ -160,11 +191,13 @@ export class WarpcastApiClient {
 
       // Add delay between chunks to avoid rate limiting
       if (i + chunkSize < fids.length) {
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
-    console.log(`Found ${verifications.length} GitHub verifications out of ${fids.length} requested FIDs`);
+    console.log(
+      `Found ${verifications.length} GitHub verifications out of ${fids.length} requested FIDs`,
+    );
     return verifications;
   }
 
@@ -173,24 +206,28 @@ export class WarpcastApiClient {
     nextCursor?: string;
   }> {
     try {
-      const url = new URL(`${this.baseUrl}/fc/account-verifications`);
-      url.searchParams.append("platform", "github");
+      const url = new URL(
+        `${this.baseUrl}/fc/account-verifications?platform=github`,
+      );
       if (cursor) {
         url.searchParams.append("cursor", cursor);
       }
 
       const response = await fetch(url.toString());
-      const data = await response.json() as {
-        result: { verifications: WarpcastVerification[] },
-        next?: { cursor: string }
+      const data = (await response.json()) as {
+        result: { verifications: WarpcastVerification[] };
+        next?: { cursor: string };
       };
 
       return {
         verifications: data.result.verifications,
-        nextCursor: data.next?.cursor
+        nextCursor: data.next?.cursor,
       };
     } catch (error) {
-      console.error("Error fetching GitHub verifications from Warpcast:", error);
+      console.error(
+        "Error fetching GitHub verifications from Warpcast:",
+        error,
+      );
       return { verifications: [] };
     }
   }
@@ -209,7 +246,9 @@ export class WarpcastApiClient {
   }
 
   // Check and cache verified GitHub users for a list of FIDs
-  async getVerifiedGithubUsersForFids(fids: number[]): Promise<WarpcastVerification[]> {
+  async getVerifiedGithubUsersForFids(
+    fids: number[],
+  ): Promise<WarpcastVerification[]> {
     const cachedUsers: WarpcastVerification[] = [];
     const fidsToCheck: number[] = [];
 
@@ -223,13 +262,17 @@ export class WarpcastApiClient {
 
     // Fetch verifications for missing or stale users
     const verifications = await this.getAllGithubVerifications();
-    const matchingVerifications = verifications.filter(v => fidsToCheck.includes(v.fid));
+    const matchingVerifications = verifications.filter((v) =>
+      fidsToCheck.includes(v.fid),
+    );
 
     // Add timestamp to each verification before caching
-    const timestampedVerifications = matchingVerifications.map(verification => ({
-      ...verification,
-      timestamp: Date.now()
-    }));
+    const timestampedVerifications = matchingVerifications.map(
+      (verification) => ({
+        ...verification,
+        timestamp: Date.now(),
+      }),
+    );
 
     const allVerifications = [...cachedUsers, ...timestampedVerifications];
 
@@ -239,20 +282,20 @@ export class WarpcastApiClient {
 
   // Helper to add Farcaster user info to verifications
   private async enhanceVerificationsWithFarcasterInfo(
-    verifications: WarpcastVerification[]
+    verifications: WarpcastVerification[],
   ): Promise<WarpcastVerification[]> {
     if (verifications.length === 0) {
       return [];
     }
 
     // Extract unique FIDs
-    const fids = [...new Set(verifications.map(v => v.fid))];
+    const fids = [...new Set(verifications.map((v) => v.fid))];
 
     // Get all user data in bulk
     const userMap = await this.getUserData(fids);
 
     // Enhance verifications with Farcaster user data
-    return verifications.map(verification => {
+    return verifications.map((verification) => {
       const farcasterUser = userMap.get(verification.fid);
 
       if (farcasterUser) {
@@ -260,10 +303,12 @@ export class WarpcastApiClient {
           ...verification,
           farcasterUsername: farcasterUser.username,
           farcasterDisplayName: farcasterUser.display_name,
-          farcasterPfpUrl: farcasterUser.pfp_url
+          farcasterPfpUrl: farcasterUser.pfp_url,
         };
       } else {
-        console.warn(`No Farcaster user data found for FID ${verification.fid}`);
+        console.warn(
+          `No Farcaster user data found for FID ${verification.fid}`,
+        );
         return verification;
       }
     });
