@@ -24,6 +24,7 @@ app.get("/feed/:fid", async (c) => {
 	const fid = parseInt(c.req.param("fid"));
 	const limit = parseInt(c.req.query("limit") || "30");
 	const page = parseInt(c.req.query("page") || "1");
+	const includeSelf = c.req.query("includeSelf") !== "false"; // Include by default, exclude only if explicitly set to "false"
 	const offset = (page - 1) * limit;
 
 	if (isNaN(fid)) {
@@ -32,33 +33,60 @@ app.get("/feed/:fid", async (c) => {
 
 	try {
 		// Query events directly from the database
-		const eventsQuery = `
-      SELECT e.*,
-             u.farcaster_username,
-             u.farcaster_display_name,
-             u.farcaster_pfp_url
-      FROM github_events e
-      JOIN users u ON e.fid = u.fid
-      WHERE e.fid IN (
-        SELECT following_fid
-        FROM follows
-        WHERE follower_fid = ?
-      )
-      ORDER BY e.created_at DESC
-      LIMIT ? OFFSET ?
-    `;
+		let eventsQuery;
+		let queryParams;
+
+		if (includeSelf) {
+			// Include user's own events
+			eventsQuery = `
+				SELECT e.*,
+				       u.farcaster_username,
+				       u.farcaster_display_name,
+				       u.farcaster_pfp_url
+				FROM github_events e
+				JOIN users u ON e.fid = u.fid
+				WHERE e.fid IN (
+					SELECT following_fid
+					FROM follows
+					WHERE follower_fid = ?
+					UNION
+					SELECT ? -- Include user's own events
+				)
+				ORDER BY e.created_at DESC
+				LIMIT ? OFFSET ?
+			`;
+			queryParams = [fid, fid, limit, offset];
+		} else {
+			// Exclude user's own events (original behavior)
+			eventsQuery = `
+				SELECT e.*,
+				       u.farcaster_username,
+				       u.farcaster_display_name,
+				       u.farcaster_pfp_url
+				FROM github_events e
+				JOIN users u ON e.fid = u.fid
+				WHERE e.fid IN (
+					SELECT following_fid
+					FROM follows
+					WHERE follower_fid = ?
+				)
+				ORDER BY e.created_at DESC
+				LIMIT ? OFFSET ?
+			`;
+			queryParams = [fid, limit, offset];
+		}
 
 		const eventsResult = await c.env.DB.prepare(eventsQuery)
-			.bind(fid, limit, offset)
+			.bind(...queryParams)
 			.all();
 
 		if (eventsResult.results.length === 0) {
 			console.log("no events, initialzing FID:", fid);
 			await c.env.DB.prepare(`
-        INSERT INTO users (fid, last_updated)
-        VALUES (?, ?)
-        ON CONFLICT (fid) DO UPDATE SET last_updated = excluded.last_updated
-      `)
+				INSERT INTO users (fid, last_updated)
+				VALUES (?, ?)
+				ON CONFLICT (fid) DO UPDATE SET last_updated = excluded.last_updated
+			`)
 				.bind(fid, Date.now())
 				.run();
 
@@ -117,6 +145,7 @@ app.get("/feed/:fid", async (c) => {
 			events,
 			page,
 			limit,
+			includeSelf,
 			hasMore: events.length === limit,
 		});
 	} catch (error) {
